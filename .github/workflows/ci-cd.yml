@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -54,7 +56,6 @@ jobs:
             catalog.proto
 
       - name: Run tests
-        working-directory: .
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
@@ -68,12 +69,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Cada servicio usa su propia carpeta como build context
+      # para que los COPY dentro del Dockerfile encuentren sus archivos
       - name: Build catalog image
-        run: docker build -t marketplace/catalog:latest -f catalog/Dockerfile .
+        working-directory: catalog
+        run: docker build -t marketplace/catalog:latest .
 
       - name: Build orders image
-        run: docker build -t marketplace/orders:latest -f orders/Dockerfile .
+        working-directory: orders
+        run: docker build -t marketplace/orders:latest .
 
       - name: Build notifications image
-        run: docker build -t marketplace/notifications:latest -f notifications/Dockerfile .
+        working-directory: notifications
+        run: docker build -t marketplace/notifications:latest .
