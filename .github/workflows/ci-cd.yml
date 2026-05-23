@@ -72,8 +72,8 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Cada servicio usa su propia carpeta como build context
-      # para que los COPY dentro del Dockerfile encuentren sus archivos
+      # catalog usa su propia carpeta como contexto (su Dockerfile hace COPY ./catalog.proto)
+      # orders y notifications usan la raiz como contexto (sus Dockerfiles hacen COPY notifications/...)
       - name: Build catalog image
         working-directory: catalog
         run: docker build -t marketplace/catalog:latest .

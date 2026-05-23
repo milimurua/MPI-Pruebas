@@ -25,8 +25,8 @@ services:
 
   catalog:
     build:
-      context: .
-      dockerfile: catalog/Dockerfile
+      context: catalog   # El Dockerfile de catalog hace COPY requirements.txt / main.py (sin prefijo)
+      dockerfile: Dockerfile
     image: marketplace/catalog:v1
     container_name: catalog
     ports:
@@ -41,8 +41,8 @@ services:
 
   orders:
     build:
-      context: .
-      dockerfile: orders/Dockerfile
+      context: orders    # El Dockerfile de orders hace COPY requirements.txt / main.py (sin prefijo)
+      dockerfile: Dockerfile
     image: marketplace/orders:v1
     container_name: orders
     ports:
@@ -58,8 +58,8 @@ services:
 
   notifications:
     build:
-      context: .
-      dockerfile: notifications/Dockerfile
+      context: notifications  # El Dockerfile de notifications hace COPY requirements.txt / worker.py (sin prefijo)
+      dockerfile: Dockerfile
     image: marketplace/notifications:v1
     container_name: notifications
     environment:
