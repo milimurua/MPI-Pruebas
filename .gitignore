@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+*.whl
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+coverage.xml
+*,cover
+.pytest_cache/
+
+# IDE / editor
+.vscode/
+.idea/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.log
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.*
+
+# Docker
+*.env
+docker-compose.override.yml
+
+# Kubernetes
+# keep manifests tracked, but ignore generated local files if any
+*.kube/config
+
+# Misc
+.mypy_cache/
+.pyre/
+.pytype/
+
+# OneDrive / Windows temp
+~$*
+
+# Ignore local Python bytecode in repo subfolders
+**/__pycache__/
+**/*.py[cod]

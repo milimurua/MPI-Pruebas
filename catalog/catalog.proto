@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package catalog;
+
+message StockRequest {
+  string sku = 1;
+  int32 quantity = 2;
+}
+
+message StockResponse {
+  string sku = 1;
+  string product_name = 2;
+  int32 stock = 3;
+  double price = 4;
+  bool available = 5;
+}
+
+service Catalog {
+  rpc CheckStock(StockRequest) returns (StockResponse);
+}

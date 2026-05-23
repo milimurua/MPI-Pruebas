@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications
+  namespace: marketplace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notifications
+  template:
+    metadata:
+      labels:
+        app: notifications
+    spec:
+      initContainers:
+        - name: wait-for-rabbitmq
+          image: busybox:1.28
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z rabbitmq 5672; do
+                echo "Waiting for RabbitMQ...";
+                sleep 2;
+              done
+      containers:
+        - name: notifications
+          image: marketplace/notifications:v1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: RABBIT_URL
+              value:  "amqp://guest:guest@rabbitmq.marketplace.svc.cluster.local:5672/"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import pika; print('ok')"
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
