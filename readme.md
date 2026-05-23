@@ -1,234 +1,113 @@
-# Market-Place-Inc — TP2
+# Market-Place-Inc — TP Final 
 
 **Sistemas Distribuidos · Ciclo 2026**  
-Microservicios con Docker, Kubernetes, gRPC y RabbitMQ.
+Locks distribuidos con Redis, monitoreo con Prometheus y Grafana, CI/CD con GitHub Actions.
 
 ---
 
-## Descripción
+## Requisitos previos
 
-El sistema implementa tres microservicios reales del ecosistema Market-Place-Inc que demuestran los 4 hitos del TP2:
-
-| Hito | Tecnología | Qué demuestra |
-|------|-----------|---------------|
-| 1 — Contenedor | Docker + Compose | Imagen fija, usuario no-root, HEALTHCHECK, multi-servicio |
-| 2 — Orquestación | Kubernetes | Deployment, Service, probes, auto-healing |
-| 3 — Comunicación sync | gRPC + Protobuf | Contrato tipado, timeout explícito, binario HTTP/2 |
-| 4 — Mensajería async | RabbitMQ | Cola durable, ACK manual, idempotencia, persistencia |
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) corriendo
+- Python 3.11 (para tests locales y load test)
 
 ---
 
-## Servicios
-
-| Servicio | Puerto (local) | Responsabilidad |
-|----------|----------------|-----------------|
-| `catalog` | 8001 (REST) · 50051 (gRPC) | Catálogo de productos — gRPC server para verificación de stock |
-| `orders` | 8000 (REST) | Orquestador del flujo de compra: REST externo + gRPC client + AMQP publisher |
-| `notifications` | — | Consumer AMQP — simula envío de emails de confirmación |
-| `rabbitmq` | 15672 (UI) · 5672 (AMQP) | Broker de mensajería |
-
-## Estructura del repositorio
-
-```
-mpi-microservice/
-├── catalog/
-│   ├── Dockerfile          # python:3.11-slim, no-root, HEALTHCHECK
-│   ├── main.py             # FastAPI + gRPC server (hilo de fondo)
-│   └── requirements.txt
-├── orders/
-│   ├── Dockerfile          # python:3.11-slim, no-root, HEALTHCHECK
-│   ├── main.py             # FastAPI + gRPC client + publisher RabbitMQ
-│   └── requirements.txt
-├── notifications/
-│   ├── Dockerfile          # python:3.11-slim, no-root, HEALTHCHECK
-│   ├── worker.py           # Consumer AMQP con ACK manual e idempotencia
-│   └── requirements.txt
-├── proto/
-│   └── catalog.proto       # Contrato gRPC (fuente de verdad)
-├── k8s/
-│   ├── namespace.yaml
-│   ├── catalog.yaml        # Deployment(replicas=2) + Service
-│   ├── orders.yaml         # Deployment(replicas=2) + Service + initContainers
-│   ├── notifications.yaml  # Deployment(replicas=1)
-│   └── rabbitmq.yaml       # Deployment + Service
-└── docker-compose.yml
-```
-
----
-
-## Ejecutar con Docker Compose
+## Levantar el sistema
 
 ```bash
-# Levantar todos los servicios (incluye build)
 docker compose up --build
-
-# Verificar que los 4 contenedores están corriendo
-docker ps
-
-# Verificar usuario no-root
-docker exec catalog whoami   # → appuser
-
-# Ver métricas de recursos
-docker stats --no-stream
 ```
 
-### Probar el flujo completo
+| Servicio | URL | Credenciales |
+|---|---|---|
+| API de inventario / reservas | http://localhost:8001 | — |
+| Grafana | http://localhost:3000 | admin / admin |
+| Prometheus | http://localhost:9090 | — |
+
+---
+
+## Probar el endpoint /reserve
 
 ```bash
-# Crear un pedido válido (id-1 = Laptop, tiene 10 en stock)
-curl -s -X POST http://localhost:8000/orders \
+# Reservar 1 unidad de Laptop
+curl -s -X POST http://localhost:8001/reserve \
   -H "Content-Type: application/json" \
-  -d '{"sku": "id-1", "quantity": 2}' | python3 -m json.tool
-
-# Resultado esperado:
-# {"order_id": "ORD-xxxxxxxx", "sku": "id-1", "quantity": 2,
-#  "product_name": "Laptop", "status": "CREATED", "total_price": 3000.0}
-
-# Probar sin stock suficiente (id-4 = Monitor, solo 5 unidades)
-curl -s -X POST http://localhost:8000/orders \
-  -H "Content-Type: application/json" \
-  -d '{"sku": "id-4", "quantity": 10}' | python3 -m json.tool
-# Resultado esperado: 400 "Not enough stock"
+  -d '{"product_id": "id-1", "quantity": 1}' | python3 -m json.tool
 ```
 
-### Ver la cola en RabbitMQ
+| Código | Significado |
+|---|---|
+| `200` | Reserva exitosa |
+| `400` | Sin stock |
+| `503` | Otro usuario tiene el candado, reintentar |
 
-Abrir http://localhost:15672 · Usuario: `guest` · Contraseña: `guest`  
-Ir a **Queues → order_notifications** para ver los mensajes procesados.
+---
 
-### Demo de persistencia (Estación 4)
+## Correr los tests
 
 ```bash
-# 1. Parar el consumer
-docker stop notifications
+# 1. Levantar Redis (o usar el del docker compose)
+docker run -d -p 6379:6379 redis:7-alpine
 
-# 2. Crear un pedido → el mensaje queda en la cola
-curl -X POST http://localhost:8000/orders \
-  -H "Content-Type: application/json" \
-  -d '{"sku": "id-3", "quantity": 1}'
+# 2. Instalar dependencias
+pip install -r catalog/requirements.txt -r tests/requirements.txt
 
-# 3. Ver en la UI que Messages Ready = 1
+# 3. Generar stubs gRPC
+cd catalog && python -m grpc_tools.protoc -I . --python_out=. --grpc_python_out=. catalog.proto && cd ..
 
-# 4. Volver a levantar el consumer → procesa el pendiente
-docker start notifications
-docker logs notifications -f
+# 4. Correr
+REDIS_HOST=localhost pytest tests/ -v
 ```
+
+| Test | Escenario | Resultado esperado |
+|---|---|---|
+| `test_dos_usuarios_mismo_producto` | 2 usuarios, stock = 1 | 1 exitosa, stock final = 0 |
+| `test_cincuenta_usuarios_diez_productos` | 50 usuarios, stock = 10 | 10 exitosas, 40 rechazadas |
+| `test_redis_no_disponible` | Redis caído | Responde 503 en < 2 segundos |
 
 ---
 
-## Desplegar en Kubernetes
+## Dashboard de Grafana
 
-> **Requisito**: Docker Desktop con Kubernetes habilitado (Settings → Kubernetes → Enable Kubernetes).
+Con `docker compose up` corriendo:
+
+1. Abrí http://localhost:3000 → admin / admin
+2. **Dashboards → Market-Place-Inc — Inventario y Reservas**
+
+| Panel | Qué muestra |
+|---|---|
+| Latencia (p50 / p95) | Cuánto tarda cada reserva |
+| Stock actual | Gauge por producto |
+| **Overselling** | Debe ser **siempre 0** |
+| Exitosas vs rechazadas | Torta de resultados |
+| Usuarios simultáneos | Tasa de intentos/segundo |
+
+---
+
+## Load test con Locust
 
 ```bash
-# 1. Crear el namespace
-kubectl apply -f k8s/namespace.yaml
+pip install locust
 
-# 2. Desplegar todos los recursos
-kubectl apply -f k8s/
+# Con salida en consola (10 minutos, 50 usuarios)
+locust -f locustfile.py --host http://localhost:8001 \
+       --users 50 --spawn-rate 5 --run-time 10m --headless
 
-# 3. Ver pods corriendo
-kubectl get pods -n marketplace
-kubectl get svc -n marketplace
-
-# 4. Acceder al servicio de orders
-kubectl port-forward svc/orders 8080:8000 -n marketplace
-# → POST http://localhost:8080/orders
-
-# 5. Demo de auto-healing
-# Terminal 1:
-kubectl get pods -n marketplace -w
-# Terminal 2:
-kubectl delete pod -n marketplace -l app=catalog
-# Ver cómo K8s recrea el pod automáticamente
+# O con interfaz web en http://localhost:8089
+locust -f locustfile.py --host http://localhost:8001
 ```
+
+Durante el test verificar en Grafana que **Overselling = 0** en todo momento.
 
 ---
 
-## Contrato gRPC
+## CI/CD — GitHub Actions
 
-```protobuf
-// proto/catalog.proto
-syntax = "proto3";
-package catalog;
+Se ejecuta automáticamente en cada `git push`. Pasos:
 
-message StockRequest {
-  string sku = 1;      // Los números de campo son el contrato binario
-  int32 quantity = 2;  // NO se pueden cambiar una vez deployado
-}
+1. Levanta Redis como servicio
+2. Instala dependencias y genera stubs gRPC
+3. Corre `pytest tests/ -v`
+4. Buildea las imágenes Docker
 
-message StockResponse {
-  string sku = 1;
-  string product_name = 2;
-  int32 stock = 3;
-  double price = 4;
-  bool available = 5;
-}
-
-service Catalog {
-  rpc CheckStock(StockRequest) returns (StockResponse);
-}
-```
-
-Para regenerar los stubs:
-```bash
-python -m grpc_tools.protoc -I proto --python_out=. --grpc_python_out=. proto/catalog.proto
-```
-
----
-
-## Decisiones de diseño
-
-| Flujo | Protocolo | Justificación |
-|-------|-----------|---------------|
-| Frontend → orders | REST | API pública, compatible con cualquier cliente |
-| orders → catalog | gRPC síncrono | Necesitamos saber el stock ANTES de confirmar el pedido. Timeout=3s para fail-fast |
-| orders → notifications | RabbitMQ asíncrono | El email no bloquea al usuario. Si el SMTP falla, el pedido ya está confirmado |
-
-**Propiedades del consumer de notificaciones:**
-- `durable=True` → la cola sobrevive reinicios del broker
-- `delivery_mode=2` → mensajes persistentes en disco
-- `auto_ack=False` → ACK manual después de procesar (at-least-once delivery)
-- `prefetch_count=1` → procesa un mensaje a la vez
-- `processed_messages` set → idempotencia para mensajes duplicados
-
----
-
-## Comandos de diagnóstico
-
-```bash
-# ¿Están corriendo los pods?
-kubectl get pods -n marketplace
-
-# ¿Por qué crashea?
-kubectl describe pod <nombre> -n marketplace
-
-# Logs del contenedor anterior (crash)
-kubectl logs <nombre> --previous -n marketplace
-
-# ¿El Service tiene endpoints?
-kubectl get endpoints -n marketplace
-
-# DNS interno funciona?
-kubectl exec -it <pod> -n marketplace -- nslookup catalog
-
-# Acceder a la UI de RabbitMQ en K8s
-kubectl port-forward svc/rabbitmq 15672:15672 -n marketplace
-
-# Rollback de un deploy
-kubectl rollout undo deployment/catalog -n marketplace
-
-# Escalar a 0 para demo de persistencia
-kubectl scale deployment notifications --replicas=0 -n marketplace
-```
-
----
-
-## Productos en el catálogo (para testing)
-
-| SKU | Producto | Stock | Precio |
-|-----|----------|-------|--------|
-| id-1 | Laptop | 10 | $1500.00 |
-| id-2 | Mouse | 50 | $25.00 |
-| id-3 | Keyboard | 20 | $45.00 |
-| id-4 | Monitor | 5 | $300.00 |
+Ver estado en: **github.com/milimurua/MPI-Pruebas → Actions**
